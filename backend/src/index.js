@@ -14,7 +14,6 @@ const swaggerSpec          = require("./config/swagger");
 const { errorHandler, notFound } = require("./middleware/error.middleware");
 const initSignalingServer  = require("./socket/signalingServer");
 
-const mongoSanitize = require("express-mongo-sanitize");
 const rateLimit     = require("express-rate-limit");
 const authRoutes     = require("./routes/auth.routes");
 const paymentRoutes = require("./routes/paymentRoutes");
@@ -38,6 +37,9 @@ mongoose.connection.once("open", async () => {
 const app    = express();
 const server = http.createServer(app);
 
+// ─── Trust Proxy (REQUIRED for Render + rate-limit) ──────────────────────────
+app.set("trust proxy", 1);
+
 // ─── Init Socket.IO Signaling ─────────────────────────────────────────────────
 initSignalingServer(server);
 
@@ -53,7 +55,6 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow requests with no origin (mobile apps, curl, Postman)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
@@ -89,8 +90,6 @@ const authLimiter = rateLimit({
 app.use("/api/", limiter);
 app.use("/api/auth/login",    authLimiter);
 app.use("/api/auth/register", authLimiter);
-
-app.use(mongoSanitize());
 
 // ─── Body Parsing ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
