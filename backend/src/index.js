@@ -14,7 +14,6 @@ const swaggerSpec          = require("./config/swagger");
 const { errorHandler, notFound } = require("./middleware/error.middleware");
 const initSignalingServer  = require("./socket/signalingServer");
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
 const mongoSanitize = require("express-mongo-sanitize");
 const rateLimit     = require("express-rate-limit");
 const authRoutes     = require("./routes/auth.routes");
@@ -37,19 +36,45 @@ mongoose.connection.once("open", async () => {
 
 // ─── App & HTTP Server ────────────────────────────────────────────────────────
 const app    = express();
-const server = http.createServer(app);   // ← wrap express in http server for Socket.IO
+const server = http.createServer(app);
 
 // ─── Init Socket.IO Signaling ─────────────────────────────────────────────────
 initSignalingServer(server);
 
+// ─── Allowed Origins ──────────────────────────────────────────────────────────
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://nexus-tau-smoky.vercel.app",
+  process.env.CLIENT_URL,
+].filter(Boolean);
+
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // allow requests with no origin (mobile apps, curl, Postman)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
 // ─── Security Middleware ──────────────────────────────────────────────────────
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }, // allow serving uploaded files
+  crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
+
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max:      100,             // max 100 requests per window
+  windowMs: 15 * 60 * 1000,
+  max:      100,
   message:  { success: false, message: "Too many requests. Please try again later." },
   standardHeaders: true,
   legacyHeaders:   false,
@@ -57,7 +82,7 @@ const limiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max:      10, // stricter for auth routes
+  max:      10,
   message:  { success: false, message: "Too many login attempts. Please try again later." },
 });
 
@@ -65,15 +90,7 @@ app.use("/api/", limiter);
 app.use("/api/auth/login",    authLimiter);
 app.use("/api/auth/register", authLimiter);
 
-// ─── NoSQL Injection Prevention ───────────────────────────────────────────────
-app.use(
-  cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+app.use(mongoSanitize());
 
 // ─── Body Parsing ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
@@ -97,7 +114,7 @@ app.use("/api/auth",      authRoutes);
 app.use("/api/profile",   profileRoutes);
 app.use("/api/meetings",  meetingRoutes);
 app.use("/api/documents", documentRoutes);
-app.use("/api/payment", paymentRoutes);
+app.use("/api/payment",   paymentRoutes);
 
 // ─── Swagger Docs ─────────────────────────────────────────────────────────────
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
